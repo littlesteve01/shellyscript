@@ -1,0 +1,141 @@
+// Shelly Poolpumpenüberwachung
+// Copyright 2022 @Littlesteve01
+//
+// Schript dient zur Überwachung der Poolheizungspumpe um diese nach einer definierten Zeit abzuschalten 
+// falls in dem System ein leck sein sollte um somit ein leerpumpen des Pools zus verhindern
+// Wird eine Notabschaltung ausgelöst wird eine Telegram Nachricht verschickt
+//
+//
+
+//
+//
+//
+// KONFIGURATION START
+
+// Telegram api key
+let telegramApiKey = 'TelegramAPI';
+
+// Telegram chat id fuer Push Benachrichtigung
+let telegramChatID = 'TelegramChatID';
+
+// Telegram Nachrichtentext
+let telegramText = 'Achtung, Poolpumpe! - !!!Notabschaltung aktiv!!!';
+
+// Zeit die die Pumpe laufen darf bis zur Notabschaltung
+let timesactive = 10; // in minuten
+
+// Zeit nachdem Timer zurueckgesetzt wird wenn Verbrauch unter  minUsage
+let timesInactive = 1; // in minuten
+
+// Leistung ab der die Zeit laeuft
+let maxUsage = 150; // in Watt
+let minUsage = 10; // in Watt
+
+//
+//
+//
+// CONFIG ENDE
+
+
+// FINGER WEG AB HIER!!
+// 
+//
+//
+
+let countactive = 0;
+let countInactive = 0;
+let alertTimer = null;
+let alertTimer2 =null;
+let stopped = false;
+
+
+function startMonitor() {
+    alertTimer = Timer.set(60 * 1000,
+        true,
+        function () {
+            Shelly.call(
+                "switch.getStatus",
+                { id: 0 },
+                function (res, error_code, error_msg, ud) {
+                   if (res.apower > maxUsage) {
+		   isReady(res.apower);
+                    }
+                },
+                null
+            );
+        },
+        null
+    );
+}
+
+function startMonitor2() {
+    alertTimer2 = Timer.set(60 * 1000,
+        true,
+        function () {
+            Shelly.call(
+                "switch.getStatus",
+                { id: 0 },
+                function (res, error_code, error_msg, ud) {
+                   if (res.apower < minUsage) {
+			isReady2(res.apower);
+                    }
+
+                },
+                null
+            );
+        },
+        null
+    );
+}
+
+function isReady(usage) {
+    if (usage > maxUsage) {
+        countactive = countactive + 1;
+        print('counter max plus 1');
+    }
+    if (countactive > timesactive) {
+        countactive = 0;
+        swOff();
+        sendTelegramMessage();
+        print('Poolpumpe Notabschaltung aktiv');
+    }
+}
+
+function isReady2(usage2) {
+    if (usage2 < minUsage) {
+        countInactive = countInactive + 1;
+        print('counter min plus 1');
+    }
+    if (countInactive > timesInactive) {
+        countactive = 0;
+        countInactive= 0;
+        print('Timer zurueckgesetzt');
+    }
+}
+
+function swOff() {
+    print('Notabschaltung eingeleitet');
+
+    Shelly.call(
+        'switch.set',
+        { id: 0, on: false },
+        function (result, error_code, error_message, ud) {
+            print('Notabschaltung erfolgreich');
+        }
+    );
+};
+
+function sendTelegramMessage() {
+    Shelly.call(
+        "http.get", {
+            url: 'https://api.telegram.org/bot' + telegramApiKey + '/sendMessage?chat_id=' + telegramChatID + '&text="' + telegramText + '"'
+        },
+        function (response, error_code, error_message, ud) {
+           print('Telegram Nachricht verschickt');
+        },
+        null
+    );
+ };
+
+startMonitor();
+startMonitor2();
